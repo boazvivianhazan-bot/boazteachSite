@@ -1,6 +1,6 @@
 # Status — tutoring manager
 
-_Updated: 2026-10-10 · end of stage 5 (deploy waiting for the GitHub repo) · dev server: http://localhost:5173/_
+_Updated: 2026-10-10 · end of stage 5 · deployed · dev server: http://localhost:5173/_
 
 ## 1. DONE AND READY TO TEST
 
@@ -40,13 +40,10 @@ Stages 1–4b are approved. **Stage 5 and the new lesson titles are waiting for 
 
 ## 2. IN PROGRESS
 
-**GitHub Pages deploy — waiting for you:**
-1. On github.com, create an **empty public** repository (no README), e.g. `boazteachSite`.
-2. In the repo: **Settings → Pages → Source: GitHub Actions**.
-3. Send me the **repo URL**, plus the **name and GitHub noreply email** to put on commits (GitHub → Settings → Emails, looks like `12345+user@users.noreply.github.com`).
-4. In Google Cloud Console → Credentials → your OAuth client → **Authorized JavaScript origins**, add `https://<your-user>.github.io`.
-
-Ready locally: a git repository on branch `main` with 75 files staged (no personal data: the only names and phones are the made-up ones in the dev-only demo). Nothing is committed or pushed yet. After you reply I'll commit, push, and check that the deploy succeeded.
+Nothing. **The app is live: https://boazvivianhazan-bot.github.io/boazteachSite/**
+- Deployed from `main` by GitHub Actions. The first run succeeded, and every push to `main` redeploys automatically.
+- Commits use your GitHub noreply address, so your Gmail isn't public.
+- **Still needed from you:** in Google Cloud Console → Credentials → your OAuth client → Authorized JavaScript origins, add `https://boazvivianhazan-bot.github.io`. Without it, Google sign-in on the live site fails with `origin_mismatch`.
 
 ## 3. NOT STARTED
 
@@ -54,5 +51,5 @@ Nothing else is planned. All five stages, plus 4b, are built.
 
 ## 4. QUESTIONS
 
-- **Repo URL + commit name/email** (section 2).
-- **Service worker:** the Claude app's built-in browser doesn't allow service workers, so I couldn't test offline mode here. The manifest, icons, paths under `/boazteachSite/` and the worker's code are all checked. Final confirmation comes from installing on your phone.
+- **Do you approve stage 5?** Please run section 1 on your phone, against the live site.
+- **Service worker:** the Claude app's built-in browser doesn't allow service workers, so offline mode and installing have only been checked as far as the files go. Installing on your phone is the real test.
