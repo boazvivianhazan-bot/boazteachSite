@@ -55,7 +55,7 @@ git push
 ```
 Every push to `main` runs GitHub Actions (`.github/workflows/deploy.yml`), which builds and publishes the site in a minute or two. You can watch the run in the repo's **Actions** tab. If a run fails, the previous version stays live. The installed app on your phone picks up the new version the next time it opens (sometimes after closing and reopening it twice).
 
-Repo: https://github.com/boazvivianhazan-bot/boazteachSite. Commits are signed "Boaz" with your GitHub noreply address.
+Repo: https://github.com/boazvivianhazan-bot/boazteachSite. Commits are signed "Boaz" with your GitHub noreply address. Sign-in on the live site works: its address is an authorized origin in Google Cloud Console.
 
 ## 2. IN PROGRESS
 
@@ -67,4 +67,6 @@ Nothing planned. New ideas can start a new stage; add them here when they come u
 
 ## 4. QUESTIONS
 
-- **Open, optional:** the first two commits on GitHub are signed with the name "boazvivianhazan-bot" (same noreply email). Renaming them to "Boaz" means a force-push that rewrites history. They stay as they are unless you ask.
+None. All answered:
+- The Google Cloud origin `https://boazvivianhazan-bot.github.io` is added; sign-in works on the live site and on your phone.
+- The first two commits keep the author name "boazvivianhazan-bot" (no force-push); later commits are signed "Boaz".
