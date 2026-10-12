@@ -2,7 +2,8 @@ import { useState, type ReactNode } from 'react'
 import { Overlay } from '../../components/Overlay'
 import { Button, ErrorBox } from '../../components/ui'
 import { useDb } from '../../data/db'
-import { cancelLesson, setLessonFlags } from '../../data/lessonOps'
+import { cancelLesson } from '../../data/lessonOps'
+import { CollectPanel } from '../payments/CollectPanel'
 import { errorText } from '../../lib/api'
 import type { CalEvent } from '../../data/events'
 import { EVENT_COLORS, isLive, matchRule, type Lesson } from '../../data/schema'
@@ -182,22 +183,7 @@ export function LessonDetails({ lesson, onClose, onEdit }: { lesson: Lesson; onC
         {cancelled ? (
           <p className="rounded-xl bg-gray-100 p-3 text-sm text-gray-600">{lesson.status === 'postponed' ? 'השיעור נדחה.' : 'השיעור בוטל.'}</p>
         ) : (
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              disabled={busy}
-              onClick={() => run(() => setLessonFlags(ctx, lesson, { status: lesson.status === 'done' ? 'planned' : 'done' }))}
-              className={`min-h-12 rounded-xl font-medium ${lesson.status === 'done' ? 'bg-green-600 text-white' : 'bg-white text-gray-700 shadow-sm'}`}
-            >
-              {lesson.status === 'done' ? '✓ התקיים' : 'סמן שהתקיים'}
-            </button>
-            <button
-              disabled={busy}
-              onClick={() => run(() => setLessonFlags(ctx, lesson, { paid: !lesson.paid }))}
-              className={`min-h-12 rounded-xl font-medium ${lesson.paid ? 'bg-green-600 text-white' : 'bg-white text-gray-700 shadow-sm'}`}
-            >
-              {lesson.paid ? '✓ שולם' : 'סמן ששולם'}
-            </button>
-          </div>
+          <CollectPanel lesson={lesson} />
         )}
         {sr?.active && !cancelled && <EndSeriesButton sr={sr} fromIso={lesson.date} onDone={onClose} />}
         {confirmCancel && !cancelled && (

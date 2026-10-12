@@ -19,7 +19,7 @@ import { batchGet, deleteRows, valuesBatchUpdate, type RangeWrite } from '../lib
 import { openDatabase, type RawDb } from './bootstrap'
 import {
   COLUMNS, fromRow, newId, settingsFromKv, settingsToKv, toRow,
-  type Cell, type Lesson, type LessonType, type Series, type Settings, type Student, type TableName,
+  type Cell, type Lesson, type LessonType, type Payment, type Series, type Settings, type Student, type TableName,
 } from './schema'
 
 export interface Snapshot {
@@ -28,25 +28,31 @@ export interface Snapshot {
   students: Student[]
   lessons: Lesson[]
   series: Series[]
+  payments: Payment[]
   settings: Settings
 }
 
-type RowTable = 'LessonTypes' | 'Students' | 'Lessons' | 'Series'
+type RowTable = 'LessonTypes' | 'Students' | 'Lessons' | 'Series' | 'Payments'
 type ItemOf<T extends RowTable> = T extends 'LessonTypes'
   ? LessonType
   : T extends 'Students'
     ? Student
     : T extends 'Series'
       ? Series
-      : Lesson
-const SNAP_KEY: Record<RowTable, 'lessonTypes' | 'students' | 'lessons' | 'series'> = {
+      : T extends 'Payments'
+        ? Payment
+        : Lesson
+const SNAP_KEY: Record<RowTable, 'lessonTypes' | 'students' | 'lessons' | 'series' | 'payments'> = {
   LessonTypes: 'lessonTypes',
   Students: 'students',
   Lessons: 'lessons',
   Series: 'series',
+  Payments: 'payments',
 }
-const KEY_COL: Record<TableName, string> = { LessonTypes: 'id', Students: 'id', Lessons: 'id', Series: 'seriesId', Settings: 'key' }
-const ID_PREFIX: Record<RowTable, string> = { LessonTypes: 'lt', Students: 'st', Lessons: 'ls', Series: 'sr' }
+const KEY_COL: Record<TableName, string> = {
+  LessonTypes: 'id', Students: 'id', Lessons: 'id', Series: 'seriesId', Payments: 'id', Settings: 'key',
+}
+const ID_PREFIX: Record<RowTable, string> = { LessonTypes: 'lt', Students: 'st', Lessons: 'ls', Series: 'sr', Payments: 'pm' }
 
 /** One record to write: matched by its key, cells by column name. */
 interface RowWrite {
@@ -165,6 +171,7 @@ export class Database {
       students: parse('Students'),
       lessons: parse('Lessons'),
       series: parse('Series'),
+      payments: parse('Payments'),
       settings: settingsFromKv(kv),
     }
   }
@@ -330,9 +337,11 @@ export class Database {
   async hardDeleteStudent(studentId: string) {
     const lessonIds = new Set(this.snapshot.lessons.filter((l) => l.studentId === studentId).map((l) => l.id))
     const seriesIds = new Set(this.snapshot.series.filter((x) => x.studentId === studentId).map((x) => x.id))
+    // Payments made by this student as their own payer (family payments stay with the family).
+    const paymentIds = new Set(this.snapshot.payments.filter((p) => p.payerId === studentId).map((p) => p.id))
     await this.exclusive(async () => {
-      const views = await this.readTabs(['Students', 'Lessons', 'Series'])
-      const rowsOf = (t: 'Students' | 'Lessons' | 'Series', match: (key: string) => boolean) => {
+      const views = await this.readTabs(['Students', 'Lessons', 'Series', 'Payments'])
+      const rowsOf = (t: 'Students' | 'Lessons' | 'Series' | 'Payments', match: (key: string) => boolean) => {
         const out: number[] = []
         for (let i = 1; i < views[t].rows.length; i++) if (match(views[t].keyAt(i))) out.push(i + 1)
         return out
@@ -341,12 +350,14 @@ export class Database {
         Students: rowsOf('Students', (k) => k === studentId),
         Lessons: rowsOf('Lessons', (k) => lessonIds.has(k)),
         Series: rowsOf('Series', (k) => seriesIds.has(k)),
+        Payments: rowsOf('Payments', (k) => paymentIds.has(k)),
       })
     })
     this.commit({
       students: this.snapshot.students.filter((s) => s.id !== studentId),
       lessons: this.snapshot.lessons.filter((l) => !lessonIds.has(l.id)),
       series: this.snapshot.series.filter((x) => !seriesIds.has(x.id)),
+      payments: this.snapshot.payments.filter((p) => !paymentIds.has(p.id)),
     })
   }
 }

@@ -123,10 +123,12 @@ export function installMockGoogle() {
         ['lt_zoom120', 'זום 120', 45, 120, true, '5', true],
       ],
       Students: [
-        ['id', 'name', 'phone', 'address', 'buildingCode', 'floorApt', 'defaultLessonTypeId', 'zoomLink', 'notes', 'active', 'allowedLessonTypeIds', 'parentName', 'parentPhone'],
-        ['st_dana', 'דנה כהן', '0501111111', 'הרצל 1, תל אביב', '1234', '3/7', 'lt_front45', '', '', true, 'lt_front45'],
-        ['st_noa', 'נועה כהן', '0502222222', 'הרצל 1, תל אביב', '1234', '3/7', 'lt_front45', '', '', true, 'lt_front45'],
-        ['st_yossi', 'יוסי לוי', '0503333333', 'ביאליק 5, רמת גן', '', '', 'lt_zoom120', 'https://zoom.us/j/1', '', true, 'lt_zoom120,lt_front45', 'רונית לוי', '0527777777'],
+        ['id', 'name', 'phone', 'address', 'buildingCode', 'floorApt', 'defaultLessonTypeId', 'zoomLink', 'notes', 'active', 'allowedLessonTypeIds', 'parentName', 'parentPhone', 'familyId', 'paysMonthly'],
+        // sisters, one family paid by their mother
+        ['st_dana', 'דנה כהן', '0501111111', 'הרצל 1, תל אביב', '1234', '3/7', 'lt_front45', '', '', true, 'lt_front45', 'רחל כהן', '0528888888', 'fm_cohen', false],
+        ['st_noa', 'נועה כהן', '0502222222', 'הרצל 1, תל אביב', '1234', '3/7', 'lt_front45', '', '', true, 'lt_front45', '', '', 'fm_cohen', false],
+        // pays at the end of the month
+        ['st_yossi', 'יוסי לוי', '0503333333', 'ביאליק 5, רמת גן', '', '', 'lt_zoom120', 'https://zoom.us/j/1', '', true, 'lt_zoom120,lt_front45', 'רונית לוי', '0527777777', '', true],
       ],
       Lessons: [
         ['id', 'date', 'start', 'end', 'studentId', 'studentName', 'lessonTypeId', 'price', 'status', 'paid', 'calendarEventId', 'notes', 'units', 'calendarId', 'seriesId', 'seriesDate', 'dismissed'],

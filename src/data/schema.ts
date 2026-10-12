@@ -24,6 +24,18 @@ export interface Student {
   allowedLessonTypeIds: string[]
   parentName: string
   parentPhone: string // WhatsApp goes here when set
+  familyId: string // students with the same familyId share one payer/balance ('' = pays alone)
+  paysMonthly: boolean // "משלם בסוף חודש"
+}
+
+/** Money received. payerId = a student id, or a familyId shared by several students. */
+export interface Payment {
+  id: string
+  date: string // yyyy-mm-dd
+  payerId: string
+  amount: number // 0 = cancelled payment (rows are never deleted)
+  method: string
+  notes: string
 }
 
 export type LessonStatus = 'planned' | 'done' | 'cancelled' | 'postponed'
@@ -95,14 +107,18 @@ export interface Settings {
   highlightRules: HighlightRule[]
   /** Format version of lesson event titles; bumping it triggers a one-time refresh of future events. */
   eventTitleVersion: number
+  paymentMethods: string[]
+  /** The old per-lesson "paid" marks were turned into payments (stage 6). */
+  paymentsMigrated: boolean
   sheetId: string
 }
 
 export const COLUMNS = {
   LessonTypes: ['id', 'name', 'durationMin', 'price', 'isZoom', 'color', 'active'],
-  Students: ['id', 'name', 'phone', 'address', 'buildingCode', 'floorApt', 'defaultLessonTypeId', 'zoomLink', 'notes', 'active', 'allowedLessonTypeIds', 'parentName', 'parentPhone'],
+  Students: ['id', 'name', 'phone', 'address', 'buildingCode', 'floorApt', 'defaultLessonTypeId', 'zoomLink', 'notes', 'active', 'allowedLessonTypeIds', 'parentName', 'parentPhone', 'familyId', 'paysMonthly'],
   Lessons: ['id', 'date', 'start', 'end', 'studentId', 'studentName', 'lessonTypeId', 'price', 'status', 'paid', 'calendarEventId', 'notes', 'units', 'calendarId', 'seriesId', 'seriesDate', 'dismissed'],
   Series: ['seriesId', 'studentId', 'weekday', 'start', 'lessonTypeId', 'units', 'startDate', 'endDate', 'active', 'price'],
+  Payments: ['id', 'date', 'payerId', 'amount', 'method', 'notes'],
   Settings: ['key', 'value'],
 } as const
 
@@ -170,6 +186,16 @@ export const fromRow = {
     allowedLessonTypeIds: str(r[10]).split(',').map((x) => x.trim()).filter(Boolean),
     parentName: str(r[11]),
     parentPhone: str(r[12]),
+    familyId: str(r[13]),
+    paysMonthly: bool(r[14]),
+  }),
+  Payments: (r: Cell[]): Payment => ({
+    id: str(r[0]),
+    date: date(r[1]),
+    payerId: str(r[2]),
+    amount: num(r[3]),
+    method: str(r[4]),
+    notes: str(r[5]),
   }),
   Lessons: (r: Cell[]): Lesson => ({
     id: str(r[0]),
@@ -208,7 +234,9 @@ export const toRow = {
   LessonTypes: (x: LessonType): Cell[] => [x.id, x.name, x.durationMin, x.price, x.isZoom, x.color, x.active],
   Students: (x: Student): Cell[] => [
     x.id, x.name, x.phone, x.address, x.buildingCode, x.floorApt, x.defaultLessonTypeId, x.zoomLink, x.notes, x.active, x.allowedLessonTypeIds.join(','), x.parentName, x.parentPhone,
+    x.familyId, x.paysMonthly,
   ],
+  Payments: (x: Payment): Cell[] => [x.id, x.date, x.payerId, x.amount, x.method, x.notes],
   Lessons: (x: Lesson): Cell[] => [
     x.id, x.date, x.start, x.end, x.studentId, x.studentName, x.lessonTypeId, x.price, x.status, x.paid, x.calendarEventId, x.notes, x.units, x.calendarId,
     x.seriesId, x.seriesDate, x.dismissed.join('|'),
@@ -250,6 +278,8 @@ export const DEFAULT_SETTINGS: Settings = {
     { id: 'hr_moked', keyword: 'מוקד', label: 'משמרת מוקד', color: '#ea580c', important: true, windowMin: 60, wholeWord: true },
   ],
   eventTitleVersion: 1,
+  paymentMethods: ['מזומן', 'ביט', 'פייבוקס', 'העברה'],
+  paymentsMigrated: false,
   sheetId: '',
 }
 
@@ -329,6 +359,15 @@ export function settingsFromKv(kv: Map<string, string>): Settings {
     }
   }
   if (kv.get('eventTitleVersion')) s.eventTitleVersion = num(kv.get('eventTitleVersion'))
+  if (kv.has('paymentMethods')) {
+    try {
+      const m = JSON.parse(kv.get('paymentMethods') || '[]')
+      if (Array.isArray(m)) s.paymentMethods = m.map((x) => String(x).trim()).filter(Boolean)
+    } catch {
+      /* keep default */
+    }
+  }
+  if (kv.has('paymentsMigrated')) s.paymentsMigrated = bool(kv.get('paymentsMigrated'))
   if (kv.get('sheetId')) s.sheetId = kv.get('sheetId')!
   return s
 }
@@ -354,6 +393,8 @@ export function settingsToKv(s: Settings): [string, string][] {
     ['calendarVisibility', JSON.stringify(s.calendarVisibility)],
     ['highlightRules', JSON.stringify(s.highlightRules)],
     ['eventTitleVersion', String(s.eventTitleVersion)],
+    ['paymentMethods', JSON.stringify(s.paymentMethods)],
+    ['paymentsMigrated', String(s.paymentsMigrated)],
     ['sheetId', s.sheetId],
   ]
 }

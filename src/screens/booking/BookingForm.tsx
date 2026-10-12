@@ -7,6 +7,8 @@ import { useDb } from '../../data/db'
 import { cachedLoad, type EventsByDay } from '../../data/events'
 import { createLessons, updateLesson, type OpsCtx } from '../../data/lessonOps'
 import { createSeries, HORIZON_DAYS } from '../../data/series'
+import { balanceText, toCollect } from '../../data/billing'
+import { useBilling } from '../../data/payments'
 import { placeKey } from '../../data/plan'
 import { EVENT_COLORS, detailsMissing, isLive, newId, normalizeStudentTypes, type Lesson, type LessonType, type Student } from '../../data/schema'
 import { errorText } from '../../lib/api'
@@ -98,6 +100,11 @@ export function BookingForm({
   const [saved, setSaved] = useState<{ lessons: Lesson[]; note: string | null } | null>(null)
 
   const student = students.find((s) => s.id === studentId)
+  const { payerOfStudent, balanceOf } = useBilling()
+  const payer = payerOfStudent(student)
+  const payerBalance = payer ? balanceOf(payer.id).balance : 0
+  // Editing a lesson that's already done: its old charge is in the balance — take it out first.
+  const balanceBeforeLesson = payerBalance + (editing?.status === 'done' ? editing.price : 0)
   const isNewStudent = !student && newMode && query.trim() !== ''
   const type = lessonTypes.find((t) => t.id === typeId)
 
@@ -461,6 +468,20 @@ export function BookingForm({
             <TextInput type="number" inputMode="decimal" min={0} value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} />
           </Field>
         </div>
+
+        {/* what to collect: price minus the payer's credit */}
+        {student && type && Number.isFinite(priceNum) && (
+          <p className="-mt-2 rounded-xl bg-white px-3 py-2 text-sm">
+            {payer?.paysMonthly ? (
+              <span className="text-gray-600">משלם בסוף חודש · {balanceText(payerBalance, ils)}</span>
+            ) : (
+              <>
+                <b>לגבות היום: {ils(toCollect({ status: 'planned', price: total }, balanceBeforeLesson))}</b>
+                {payerBalance !== 0 && <span className="text-gray-500"> · {balanceText(payerBalance, ils)}</span>}
+              </>
+            )}
+          </p>
+        )}
 
         {/* date + time (manual) */}
         <div className="grid grid-cols-2 gap-3">

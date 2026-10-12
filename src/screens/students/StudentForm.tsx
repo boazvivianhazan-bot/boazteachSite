@@ -10,6 +10,7 @@ import { StudentFields } from './StudentFields'
 export const blankStudent = (name = ''): Student => ({
   id: '', name, phone: '', address: '', buildingCode: '', floorApt: '',
   defaultLessonTypeId: '', zoomLink: '', notes: '', active: true, allowedLessonTypeIds: [], parentName: '', parentPhone: '',
+  familyId: '', paysMonthly: false,
 })
 
 export function trimStudent(s: Student): Student {
@@ -67,6 +68,14 @@ export function StudentForm({
     >
       <StudentFields value={s} onChange={setS} />
       {duplicate && <p className="mt-2 text-sm text-amber-700">כבר קיים תלמיד בשם הזה.</p>}
+      <div className="mt-4 rounded-xl bg-white px-3">
+        <Toggle
+          label="משלם בסוף חודש"
+          hint="יופיע ברשימת 'לגבייה החודש' בסיכום החודשי"
+          checked={s.paysMonthly}
+          onChange={(v) => setS({ ...s, paysMonthly: v })}
+        />
+      </div>
       {initial && (
         <div className="mt-4 rounded-xl bg-white px-3">
           <Toggle label="תלמיד פעיל" checked={s.active} onChange={(v) => setS({ ...s, active: v })} />

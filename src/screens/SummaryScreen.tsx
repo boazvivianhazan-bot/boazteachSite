@@ -3,8 +3,13 @@ import { Page } from '../components/Page'
 import { Button, Card, ErrorBox } from '../components/ui'
 import { useDb } from '../data/db'
 import { cancelLesson, setLessonFlags, type OpsCtx } from '../data/lessonOps'
+import { familyName } from '../data/billing'
+import { useBilling } from '../data/payments'
+import { Overlay } from '../components/Overlay'
+import { CollectPanel } from './payments/CollectPanel'
+import { MonthlyCollect } from './summary/MonthlyCollect'
 import { EVENT_COLORS, isLive, type Lesson } from '../data/schema'
-import { addMonths, byStudent, byType, incomeByMonth, monthLabel, monthOf, monthsWithData, monthTotals, type BreakdownRow } from '../data/summary'
+import { addMonths, byStudent, byType, incomeByMonth, monthLabel, monthOf, monthPayments, monthsWithData, monthTotals, type BreakdownRow } from '../data/summary'
 import { errorText } from '../lib/api'
 import { exportMonth } from '../lib/excel'
 import { DAY_SHORT, formatDate, ils } from '../lib/format'
@@ -31,8 +36,7 @@ function Breakdown({ title, rows }: { title: string; rows: BreakdownRow[] }) {
           <tr>
             <th className="px-4 py-1 text-start font-normal"></th>
             <th className="px-2 py-1 text-end font-normal">שיעורים</th>
-            <th className="px-2 py-1 text-end font-normal">הכנסה</th>
-            <th className="px-4 py-1 text-end font-normal">לא שולם</th>
+            <th className="px-4 py-1 text-end font-normal">הכנסה</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
@@ -45,8 +49,7 @@ function Breakdown({ title, rows }: { title: string; rows: BreakdownRow[] }) {
                 </span>
               </td>
               <td className="px-2 py-2 text-end tabular-nums">{r.units}</td>
-              <td className="px-2 py-2 text-end tabular-nums">{ils(r.income)}</td>
-              <td className={`px-4 py-2 text-end tabular-nums ${r.unpaid ? 'font-medium text-amber-700' : 'text-gray-400'}`}>{r.unpaid ? ils(r.unpaid) : '—'}</td>
+              <td className="px-4 py-2 text-end tabular-nums">{ils(r.income)}</td>
             </tr>
           ))}
         </tbody>
@@ -73,7 +76,7 @@ function Chip({ on, onClick, children, disabled, tone = 'green' }: { on: boolean
   )
 }
 
-function LessonRow({ l, ctx, nowIso, onEdit }: { l: Lesson; ctx: OpsCtx; nowIso: string; onEdit: () => void }) {
+function LessonRow({ l, ctx, nowIso, onEdit, onCollect }: { l: Lesson; ctx: OpsCtx; nowIso: string; onEdit: () => void; onCollect: () => void }) {
   const [busy, setBusy] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -118,8 +121,8 @@ function LessonRow({ l, ctx, nowIso, onEdit }: { l: Lesson; ctx: OpsCtx; nowIso:
             <Chip on={l.status === 'done'} disabled={busy} onClick={() => run(() => setLessonFlags(ctx, l, { status: l.status === 'done' ? 'planned' : 'done' }))}>
               {l.status === 'done' ? '✓ התקיים' : needsConfirm ? 'אישור שהתקיים' : 'התקיים'}
             </Chip>
-            <Chip on={l.paid} disabled={busy} onClick={() => run(() => setLessonFlags(ctx, l, { paid: !l.paid }))}>
-              {l.paid ? '✓ שולם' : 'שולם'}
+            <Chip on={false} disabled={busy} onClick={onCollect}>
+              ₪ גבייה
             </Chip>
             {confirmCancel ? (
               <Chip on tone="red" disabled={busy} onClick={() => run(() => cancelLesson(ctx, l))}>
@@ -151,7 +154,10 @@ function LessonRow({ l, ctx, nowIso, onEdit }: { l: Lesson; ctx: OpsCtx; nowIso:
 }
 
 export function SummaryScreen() {
-  const { db, settings, students, lessonTypes, lessons } = useDb()
+  const { db, settings, students, lessonTypes, lessons, payments } = useDb()
+  const { balances } = useBilling()
+  const [collecting, setCollecting] = useState<Lesson | null>(null)
+  const [showPayments, setShowPayments] = useState(false)
   const now = utcToZoned(new Date())
   const nowIso = `${now.iso}T${String(Math.floor(now.min / 60)).padStart(2, '0')}:${String(now.min % 60).padStart(2, '0')}`
   const currentYm = monthOf(now.iso)
@@ -163,10 +169,18 @@ export function SummaryScreen() {
   const ctx: OpsCtx = { db, settings, students, lessonTypes }
 
   const months = useMemo(() => monthsWithData(lessons, currentYm), [lessons, currentYm])
-  const totals = useMemo(() => monthTotals(lessons, ym), [lessons, ym])
+  const totals = useMemo(() => monthTotals(lessons, ym, payments), [lessons, ym, payments])
+  const paymentsOfMonth = useMemo(() => monthPayments(payments, ym), [payments, ym])
+  const openDebt = useMemo(() => [...balances.values()].reduce((s, b) => s + (b.balance < 0 ? -b.balance : 0), 0), [balances])
+  const payerName = (id: string) => {
+    const st = students.find((s) => s.id === id || s.familyId === id)
+    if (!st) return id
+    if (!st.familyId) return st.name
+    return familyName(students.filter((s) => s.familyId === st.familyId))
+  }
   const typeRows = useMemo(() => byType(lessons, ym, lessonTypes), [lessons, ym, lessonTypes])
   const studentRows = useMemo(() => byStudent(lessons, ym), [lessons, ym])
-  const chart = useMemo(() => incomeByMonth(lessons, ym > currentYm ? ym : currentYm, 6), [lessons, ym, currentYm])
+  const chart = useMemo(() => incomeByMonth(lessons, payments, ym > currentYm ? ym : currentYm, 6), [lessons, payments, ym, currentYm])
   const monthLessons = useMemo(
     () => lessons.filter((l) => monthOf(l.date) === ym).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start)),
     [lessons, ym],
@@ -179,7 +193,7 @@ export function SummaryScreen() {
     setExporting(true)
     setExportError(null)
     try {
-      await exportMonth(lessons, ym, lessonTypes)
+      await exportMonth(lessons, ym, lessonTypes, payments, students)
     } catch (e) {
       setExportError(errorText(e))
     } finally {
@@ -244,10 +258,13 @@ export function SummaryScreen() {
       <div className="grid grid-cols-2 gap-2">
         <Stat label="שיעורים שהתקיימו" value={`${totals.doneUnits}${totals.liveUnits > totals.doneUnits ? ` מתוך ${totals.liveUnits}` : ''}`} />
         <Stat label="הכנסה צפויה" value={ils(totals.expected)} />
-        <Stat label="שולם" value={ils(totals.paid)} tone="good" />
-        <Stat label="לא שולם" value={ils(totals.unpaid)} tone={totals.unpaid > 0 ? 'warn' : undefined} />
+        <Stat label="הכנסה מהשיעורים שהתקיימו" value={ils(totals.earned)} tone="good" />
+        <Stat label="כסף שהתקבל החודש" value={ils(totals.received)} />
       </div>
-      <p className="mt-1 px-1 text-xs text-gray-500">שיעורים כפולים נספרים לפי כמות (×2 = 2). שיעורים שבוטלו או נדחו לא נספרים.</p>
+      <p className="mt-1 px-1 text-xs text-gray-500">
+        שיעורים כפולים נספרים לפי כמות (×2 = 2). שיעורים שבוטלו או נדחו לא נספרים ולא מחויבים.
+        {openDebt > 0 && <span className="font-medium text-red-700"> · חובות פתוחים כרגע (כל המשלמים): {ils(openDebt)}</span>}
+      </p>
 
       {/* past lessons still "planned" */}
       {toConfirm.length > 0 && (
@@ -263,9 +280,39 @@ export function SummaryScreen() {
 
       {/* income chart */}
       <Card className="mt-4">
-        <h3 className="mb-2 text-sm font-semibold text-gray-500">הכנסה לפי חודש</h3>
+        <h3 className="mb-2 text-sm font-semibold text-gray-500">הכנסה מהשיעורים מול כסף שהתקבל</h3>
         <IncomeChart data={chart} selected={ym} onSelect={setYm} />
       </Card>
+
+      <MonthlyCollect ym={ym} />
+
+      {/* payments received this month */}
+      <section className="mt-4">
+        <button onClick={() => setShowPayments((v) => !v)} className="mb-2 flex w-full items-center justify-between px-1 text-sm font-semibold text-gray-500">
+          <span>תשלומים שהתקבלו החודש ({paymentsOfMonth.length}) · {ils(totals.received)}</span>
+          <span>{showPayments ? '▴' : '▾'}</span>
+        </button>
+        {showPayments && (
+          <Card className="p-0">
+            {paymentsOfMonth.length === 0 ? (
+              <p className="p-4 text-center text-sm text-gray-500">לא התקבלו תשלומים בחודש הזה.</p>
+            ) : (
+              <ul className="divide-y divide-gray-100">
+                {paymentsOfMonth.map((p) => (
+                  <li key={p.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                    <span className="w-12 shrink-0">{formatDate(p.date).slice(0, 5)}</span>
+                    <span className="min-w-0 flex-1 truncate">
+                      {payerName(p.payerId)}
+                      <span className="text-gray-500">{[p.method, p.notes].filter(Boolean).map((x) => ` · ${x}`).join('')}</span>
+                    </span>
+                    <span className="shrink-0 font-semibold tabular-nums text-green-700">{ils(p.amount)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        )}
+      </section>
 
       {/* breakdowns */}
       <div className="mt-4 space-y-3">
@@ -298,6 +345,7 @@ export function SummaryScreen() {
                   ctx={ctx}
                   nowIso={nowIso}
                   onEdit={() => setBooking({ init: { mode: 'edit', lesson: l }, key: Date.now() })}
+                  onCollect={() => setCollecting(l)}
                 />
               ))}
             </ul>
@@ -306,6 +354,11 @@ export function SummaryScreen() {
         <p className="mt-1 px-1 text-xs text-gray-500">לחיצה על שיעור פותחת עריכה (סוג, מחיר, זמן) — האירוע ביומן מתעדכן בהתאם.</p>
       </section>
 
+      {collecting && (
+        <Overlay open title={`גבייה – ${collecting.studentName}`} onClose={() => setCollecting(null)}>
+          <CollectPanel lesson={lessons.find((x) => x.id === collecting.id) ?? collecting} />
+        </Overlay>
+      )}
       {booking && (
         <BookingForm
           key={booking.key}

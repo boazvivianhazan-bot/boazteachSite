@@ -5,11 +5,13 @@ import { Button, Card } from '../components/ui'
 import { useDb } from '../data/db'
 import { EVENT_COLORS, detailsMissing, type Student } from '../data/schema'
 import { ils } from '../lib/format'
-import { MissingTag, StudentCard, unpaidBalance } from './students/StudentCard'
+import { MissingTag, StudentCard } from './students/StudentCard'
+import { useBilling } from '../data/payments'
 import { StudentForm } from './students/StudentForm'
 
 export function StudentsScreen() {
-  const { students, lessons, lessonTypes } = useDb()
+  const { students, lessonTypes } = useDb()
+  const { ownBalanceOf } = useBilling()
   const [q, setQ] = useState('')
   const [showInactive, setShowInactive] = useState(false)
   const [openId, setOpenId] = useState<string | null>(null)
@@ -57,7 +59,8 @@ export function StudentsScreen() {
         <Card className="p-0">
           <ul className="divide-y divide-gray-100">
             {list.map((s) => {
-              const unpaid = unpaidBalance(lessons, s.id)
+              // Her OWN amount (in a family: her lessons minus her share of the family payments).
+              const bal = ownBalanceOf(s.id)
               const lt = lessonTypes.find((t) => t.id === s.defaultLessonTypeId)
               return (
                 <li key={s.id}>
@@ -75,7 +78,11 @@ export function StudentsScreen() {
                       </span>
                       <span className="block truncate text-xs text-gray-500">{[typesLabel(s), s.address].filter(Boolean).join(' · ')}</span>
                     </span>
-                    {unpaid > 0 && <span className="rounded-lg bg-amber-50 px-2 py-1 text-sm font-semibold text-amber-700">{ils(unpaid)}</span>}
+                    {bal !== 0 && (
+                      <span className={`shrink-0 rounded-lg px-2 py-1 text-sm font-semibold ${bal < 0 ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
+                        {bal < 0 ? `חוב ${ils(-bal)}` : `זכות ${ils(bal)}`}
+                      </span>
+                    )}
                   </button>
                 </li>
               )

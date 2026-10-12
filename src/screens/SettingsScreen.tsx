@@ -10,6 +10,7 @@ import { Section } from './settings/Section'
 import { WorkHoursSection } from './settings/WorkHoursSection'
 import { CalendarsSection } from './settings/CalendarsSection'
 import { HighlightRulesSection } from './settings/HighlightRulesSection'
+import { PaymentMethodsSection } from './settings/PaymentMethodsSection'
 import { DeleteTestDataSection } from './settings/DeleteTestDataSection'
 
 function LessonTypesSection() {
@@ -52,6 +53,7 @@ export function SettingsScreen() {
       <WorkHoursSection />
       <CalendarsSection />
       <HighlightRulesSection />
+      <PaymentMethodsSection />
       <Section title="מסד נתונים">
         <div className="space-y-2">
           <a

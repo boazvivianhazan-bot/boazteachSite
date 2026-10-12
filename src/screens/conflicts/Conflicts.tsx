@@ -10,6 +10,7 @@ import { errorText } from '../../lib/api'
 import { whatsappLink, whatsappPhone } from '../../lib/contact'
 import { DAY_NAMES, formatDate } from '../../lib/format'
 import { todayIso, weekdayOf } from '../../lib/tz'
+import { migratePaidLessons } from '../../data/payments'
 import { BookingForm } from '../booking/BookingForm'
 
 /** Ready-made Hebrew rescheduling message (doesn't reveal what the clash is, except a holiday). */
@@ -144,16 +145,23 @@ let maintained = false
 export function SeriesKeeper() {
   const { db, settings, students, lessonTypes, lessons, series } = useDb()
   const [notice, setNotice] = useState<string | null>(null)
+  const addNotice = (text: string) => setNotice((prev) => (prev ? `${prev}
+${text}` : text))
   useEffect(() => {
     if (maintained) return
     maintained = true
     const ctx: OpsCtx = { db, settings, students, lessonTypes }
     ;(async () => {
+      // Stage 6: the old per-lesson "paid" marks become payments (once; safe on two devices).
+      if (!db.snapshot.settings.paymentsMigrated) {
+        const n = await migratePaidLessons(db)
+        if (n) addNotice(`${n} שיעורים שסומנו "שולם" הועברו לתשלומים — היתרות מחושבות מעכשיו לפי תשלומים.`)
+      }
       // Title fix first, so the count covers only events that existed in the old format.
       if (settings.eventTitleVersion < EVENT_TITLE_VERSION) {
         const n = await refreshFutureLessonEvents(ctx, lessons, todayIso())
         await db.saveSettings({ ...db.snapshot.settings, eventTitleVersion: EVENT_TITLE_VERSION })
-        if (n) setNotice(`כותרות השיעורים ביומן עודכנו לפורמט החדש (💻 זום / 🏠 פרונטלי): ${n} אירועים עודכנו.`)
+        if (n) addNotice(`כותרות השיעורים ביומן עודכנו לפורמט החדש (💻 זום / 🏠 פרונטלי): ${n} אירועים עודכנו.`)
       }
       await topUpSeries(ctx, series, db.snapshot.lessons)
     })().catch(() => {
@@ -164,7 +172,7 @@ export function SeriesKeeper() {
   if (!notice) return null
   return (
     <div role="status" className="fixed inset-x-3 top-3 z-50 mx-auto flex max-w-md items-start gap-2 rounded-xl bg-green-50 p-3 text-sm text-green-900 shadow-lg">
-      <p className="flex-1">✓ {notice}</p>
+      <p className="flex-1 whitespace-pre-line">✓ {notice}</p>
       <button aria-label="סגירה" onClick={() => setNotice(null)} className="text-lg leading-none">
         ×
       </button>

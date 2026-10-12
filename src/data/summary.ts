@@ -1,7 +1,7 @@
 // Monthly numbers. Cancelled and postponed lessons never count; lessons are
 // counted in units (a ×2 lesson = 2 lessons). Prices are the stored per-lesson
 // prices, so old months never change when rates change.
-import { EVENT_COLORS, isLive, type Lesson, type LessonType } from './schema'
+import { EVENT_COLORS, isLive, type Lesson, type LessonType, type Payment } from './schema'
 
 export const monthOf = (iso: string) => iso.slice(0, 7) // "2026-10"
 
@@ -25,20 +25,22 @@ export interface MonthTotals {
   doneUnits: number // lessons that happened
   liveUnits: number // happened + planned
   expected: number // income of all live lessons in the month
-  paid: number
-  unpaid: number
+  earned: number // income of lessons that happened (what was charged)
+  received: number // money received in the month (payments)
 }
 
-export function monthTotals(lessons: Lesson[], ym: string): MonthTotals {
-  const t: MonthTotals = { doneUnits: 0, liveUnits: 0, expected: 0, paid: 0, unpaid: 0 }
+export function monthTotals(lessons: Lesson[], ym: string, payments: Payment[] = []): MonthTotals {
+  const t: MonthTotals = { doneUnits: 0, liveUnits: 0, expected: 0, earned: 0, received: 0 }
   for (const l of lessons) {
     if (monthOf(l.date) !== ym || !isLive(l)) continue
     t.liveUnits += l.units
-    if (l.status === 'done') t.doneUnits += l.units
     t.expected += l.price
-    if (l.paid) t.paid += l.price
+    if (l.status === 'done') {
+      t.doneUnits += l.units
+      t.earned += l.price
+    }
   }
-  t.unpaid = t.expected - t.paid
+  for (const p of payments) if (monthOf(p.date) === ym) t.received += p.amount
   return t
 }
 
@@ -48,7 +50,6 @@ export interface BreakdownRow {
   color?: string
   units: number
   income: number
-  unpaid: number
 }
 
 function breakdown(lessons: Lesson[], ym: string, keyOf: (l: Lesson) => string, nameOf: (key: string, l: Lesson) => string, colorOf?: (key: string) => string | undefined) {
@@ -56,10 +57,9 @@ function breakdown(lessons: Lesson[], ym: string, keyOf: (l: Lesson) => string, 
   for (const l of lessons) {
     if (monthOf(l.date) !== ym || !isLive(l)) continue
     const k = keyOf(l)
-    const r = rows.get(k) ?? { key: k, name: nameOf(k, l), color: colorOf?.(k), units: 0, income: 0, unpaid: 0 }
+    const r = rows.get(k) ?? { key: k, name: nameOf(k, l), color: colorOf?.(k), units: 0, income: 0 }
     r.units += l.units
     r.income += l.price
-    if (!l.paid) r.unpaid += l.price
     rows.set(k, r)
   }
   return [...rows.values()].sort((a, b) => b.income - a.income)
@@ -82,11 +82,15 @@ export function monthsWithData(lessons: Lesson[], currentYm: string) {
   return [...new Set([currentYm, ...lessons.map((l) => monthOf(l.date)).filter((m) => /^\d{4}-\d{2}$/.test(m))])].sort().reverse()
 }
 
-/** Paid / unpaid income for `count` months ending at `endYm`. */
-export function incomeByMonth(lessons: Lesson[], endYm: string, count: number) {
+/** Earned (lessons done) and received (payments) for `count` months ending at `endYm`. */
+export function incomeByMonth(lessons: Lesson[], payments: Payment[], endYm: string, count: number) {
   return Array.from({ length: count }, (_, i) => {
     const ym = addMonths(endYm, i - count + 1)
-    const t = monthTotals(lessons, ym)
-    return { ym, paid: t.paid, unpaid: t.unpaid }
+    const t = monthTotals(lessons, ym, payments)
+    return { ym, earned: t.earned, received: t.received }
   })
 }
+
+/** Payments received in a month, newest first. */
+export const monthPayments = (payments: Payment[], ym: string) =>
+  payments.filter((p) => monthOf(p.date) === ym && p.amount).sort((a, b) => b.date.localeCompare(a.date))

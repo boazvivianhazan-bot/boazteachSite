@@ -5,6 +5,9 @@ import { useDb } from '../../data/db'
 import { EVENT_COLORS, detailsMissing, isLive, type Lesson, type Student } from '../../data/schema'
 import { telLink, wazeLink, whatsappLink, whatsappPhone } from '../../lib/contact'
 import { formatDate, ils } from '../../lib/format'
+import { useBilling } from '../../data/payments'
+import { BalanceBox } from '../payments/BalanceBox'
+import { FamilySection } from '../payments/FamilySection'
 import { SeriesList } from './SeriesList'
 import { StudentForm } from './StudentForm'
 
@@ -17,12 +20,6 @@ const STATUS: Record<Lesson['status'], { label: string; cls: string }> = {
 
 export function MissingTag() {
   return <span className="inline-block rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">פרטים חסרים</span>
-}
-
-export function unpaidBalance(lessons: Lesson[], studentId: string) {
-  return lessons
-    .filter((l) => l.studentId === studentId && l.status === 'done' && !l.paid)
-    .reduce((sum, l) => sum + l.price, 0)
 }
 
 function ActionLink({ href, label, icon, disabled }: { href: string; label: string; icon: ReactNode; disabled?: boolean }) {
@@ -64,8 +61,9 @@ export function StudentCard({ student, onClose }: { student: Student; onClose: (
         .sort((a, b) => (b.date + b.start).localeCompare(a.date + a.start)),
     [lessons, student.id],
   )
-  const unpaid = unpaidBalance(lessons, student.id)
-  const done = history.filter((l) => l.status === 'done').length
+  const done = history.filter((l) => l.status === 'done').reduce((n, l) => n + l.units, 0)
+  const { payerOfStudent } = useBilling()
+  const payer = payerOfStudent(student)
   // Default first, then the rest in the order they appear in Settings.
   const types = lessonTypes
     .filter((t) => student.allowedLessonTypeIds.includes(t.id))
@@ -90,16 +88,8 @@ export function StudentCard({ student, onClose }: { student: Student; onClose: (
           <ActionLink href={wazeLink(student.address)} label="ניווט Waze" icon={<span className="text-xl">🚗</span>} disabled={!student.address} />
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          <Card className={unpaid > 0 ? 'bg-amber-50' : ''}>
-            <div className="text-xs text-gray-500">יתרה לתשלום</div>
-            <div className={`text-xl font-bold ${unpaid > 0 ? 'text-amber-700' : 'text-gray-800'}`}>{ils(unpaid)}</div>
-          </Card>
-          <Card>
-            <div className="text-xs text-gray-500">שיעורים שהתקיימו</div>
-            <div className="text-xl font-bold">{done}</div>
-          </Card>
-        </div>
+        {payer && <BalanceBox payer={payer} student={student} />}
+        <FamilySection student={student} />
 
         <Card>
           <dl className="-my-2 divide-y divide-gray-100">
@@ -134,7 +124,9 @@ export function StudentCard({ student, onClose }: { student: Student; onClose: (
         <SeriesList studentId={student.id} />
 
         <section>
-          <h3 className="mb-2 px-1 text-sm font-semibold text-gray-500">היסטוריית שיעורים ({history.length})</h3>
+          <h3 className="mb-2 px-1 text-sm font-semibold text-gray-500">
+            היסטוריית שיעורים ({history.length}) · התקיימו {done}
+          </h3>
           {history.length === 0 ? (
             <Card>
               <p className="text-sm text-gray-500">אין עדיין שיעורים.</p>
@@ -155,11 +147,6 @@ export function StudentCard({ student, onClose }: { student: Student; onClose: (
                         <span className={!isLive(l) ? 'text-gray-400 line-through' : 'font-medium'}>{ils(l.price)}</span>
                         <span className="mt-0.5 flex justify-end gap-1">
                           <span className={`rounded-md px-1.5 text-xs ${STATUS[l.status].cls}`}>{STATUS[l.status].label}</span>
-                          {isLive(l) && (
-                            <span className={`rounded-md px-1.5 text-xs ${l.paid ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
-                              {l.paid ? 'שולם' : 'לא שולם'}
-                            </span>
-                          )}
                         </span>
                       </span>
                     </li>
