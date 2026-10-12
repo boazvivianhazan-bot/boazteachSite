@@ -134,15 +134,22 @@ export function CalendarScreen() {
             onTap: () => setOpen({ kind: 'event', ev: p.event, iso }),
           }
         })
+      // One block per lesson — a group lesson (rows sharing a groupId) is one block.
+      const blocks = new Map<string, typeof lessons>()
       for (const l of lessons) {
         if (l.date !== iso || !isLive(l) || !l.start || !l.end) continue
+        const k = l.groupId || l.id
+        blocks.set(k, [...(blocks.get(k) ?? []), l])
+      }
+      for (const [k, rows] of blocks) {
+        const l = rows[0]
         const t = lessonTypes.find((x) => x.id === l.lessonTypeId)
         items.push({
-          key: `l${l.id}`,
+          key: `l${k}`,
           start: toMin(l.start),
           end: toMin(l.end),
           color: EVENT_COLORS[t?.color ?? '']?.hex ?? '#64748b',
-          title: l.studentName,
+          title: rows.length > 1 ? `קבוצה – ${rows.map((r) => r.studentName.split(' ')[0]).join(', ')} (${rows.length})` : l.studentName,
           sub: `${t?.name ?? ''}${l.units > 1 ? ` ×${l.units}` : ''}`,
           variant: 'lesson',
           icon: t?.isZoom ? '💻' : '🏠',

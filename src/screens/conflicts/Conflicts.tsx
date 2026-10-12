@@ -3,7 +3,7 @@ import { Overlay } from '../../components/Overlay'
 import { ErrorBox } from '../../components/ui'
 import { useConflicts, type LessonConflict } from '../../data/conflictCheck'
 import { useDb } from '../../data/db'
-import { dismissConflicts, postponeLesson, refreshFutureLessonEvents, type OpsCtx } from '../../data/lessonOps'
+import { dismissConflicts, postponeLessons, refreshFutureLessonEvents, type OpsCtx } from '../../data/lessonOps'
 import { topUpSeries } from '../../data/series'
 import type { Student } from '../../data/schema'
 import { errorText } from '../../lib/api'
@@ -28,8 +28,8 @@ function ConflictCard({ c, ctx, onMove }: { c: LessonConflict; ctx: OpsCtx; onMo
   const [confirmPostpone, setConfirmPostpone] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const l = c.lesson
-  const st = ctx.students.find((s) => s.id === l.studentId)
-  const phone = st ? whatsappPhone(st) : ''
+  const group = c.rows.length > 1
+  const members = c.rows.map((r) => ({ row: r, st: ctx.students.find((s) => s.id === r.studentId) }))
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true)
@@ -46,7 +46,8 @@ function ConflictCard({ c, ctx, onMove }: { c: LessonConflict; ctx: OpsCtx; onMo
     <li className="space-y-2 rounded-2xl bg-white p-3 shadow-sm">
       <div>
         <p className="font-semibold">
-          {ctx.lessonTypes.find((t) => t.id === l.lessonTypeId)?.isZoom ? '💻' : '🏠'} {l.studentName} · יום {DAY_NAMES[weekdayOf(l.date)]} {formatDate(l.date).slice(0, 5)} · <span dir="ltr">{l.start}-{l.end}</span>
+          {ctx.lessonTypes.find((t) => t.id === l.lessonTypeId)?.isZoom ? '💻' : '🏠'}{' '}
+          {group ? `קבוצה – ${c.rows.map((r) => r.studentName.split(' ')[0]).join(', ')}` : l.studentName} · יום {DAY_NAMES[weekdayOf(l.date)]} {formatDate(l.date).slice(0, 5)} · <span dir="ltr">{l.start}-{l.end}</span>
         </p>
         <ul className="mt-1 space-y-0.5 text-sm text-amber-900">
           {c.reasons.map((r) => (
@@ -59,7 +60,7 @@ function ConflictCard({ c, ctx, onMove }: { c: LessonConflict; ctx: OpsCtx; onMo
           הזז
         </button>
         {confirmPostpone ? (
-          <button disabled={busy} onClick={() => run(() => postponeLesson(ctx, l))} className="min-h-10 rounded-lg bg-red-600 font-medium text-white">
+          <button disabled={busy} onClick={() => run(() => postponeLessons(ctx, c.rows))} className="min-h-10 rounded-lg bg-red-600 font-medium text-white">
             {busy ? '…' : 'לדחות?'}
           </button>
         ) : (
@@ -69,24 +70,43 @@ function ConflictCard({ c, ctx, onMove }: { c: LessonConflict; ctx: OpsCtx; onMo
         )}
         <button
           disabled={busy}
-          onClick={() => run(() => dismissConflicts(ctx, l, c.reasons.map((r) => r.id)))}
+          onClick={() => run(() => dismissConflicts(ctx, c.rows, c.reasons.map((r) => r.id)))}
           className="min-h-10 rounded-lg bg-gray-100 font-medium"
         >
           השאר
         </button>
-        {phone ? (
-          <a
-            href={whatsappLink(phone, rescheduleText(c, st))}
-            target="_blank"
-            rel="noreferrer"
-            className="flex min-h-10 items-center justify-center rounded-lg bg-green-600 font-medium text-white"
-          >
-            וואטסאפ
-          </a>
-        ) : (
-          <span className="flex min-h-10 items-center justify-center rounded-lg bg-gray-100 text-gray-400">וואטסאפ</span>
-        )}
+        {!group &&
+          (members[0].st && whatsappPhone(members[0].st) ? (
+            <a
+              href={whatsappLink(whatsappPhone(members[0].st), rescheduleText({ ...c, lesson: members[0].row }, members[0].st))}
+              target="_blank"
+              rel="noreferrer"
+              className="flex min-h-10 items-center justify-center rounded-lg bg-green-600 font-medium text-white"
+            >
+              וואטסאפ
+            </a>
+          ) : (
+            <span className="flex min-h-10 items-center justify-center rounded-lg bg-gray-100 text-gray-400">וואטסאפ</span>
+          ))}
       </div>
+      {group && (
+        // A group: one WhatsApp per student (each may have a different parent).
+        <div className="flex flex-wrap gap-1.5">
+          {members.map(({ row, st }) =>
+            st && whatsappPhone(st) ? (
+              <a
+                key={row.id}
+                href={whatsappLink(whatsappPhone(st), rescheduleText({ ...c, lesson: row }, st))}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-full bg-green-600 px-3 py-1.5 text-xs font-medium text-white"
+              >
+                וואטסאפ · {row.studentName.split(' ')[0]}
+              </a>
+            ) : null,
+          )}
+        </div>
+      )}
       {confirmPostpone && !busy && (
         <p className="text-xs text-gray-500">"דחה" מסמן את השיעור כנדחה, מוחק אותו מהיומן ולא סופר אותו בהכנסות.</p>
       )}

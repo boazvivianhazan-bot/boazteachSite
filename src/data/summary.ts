@@ -29,14 +29,26 @@ export interface MonthTotals {
   received: number // money received in the month (payments)
 }
 
+/** A group lesson (rows sharing a groupId) is ONE lesson taught. */
+const lessonKey = (l: Lesson) => l.groupId || l.id
+
 export function monthTotals(lessons: Lesson[], ym: string, payments: Payment[] = []): MonthTotals {
   const t: MonthTotals = { doneUnits: 0, liveUnits: 0, expected: 0, earned: 0, received: 0 }
+  const live = new Set<string>()
+  const done = new Set<string>()
   for (const l of lessons) {
     if (monthOf(l.date) !== ym || !isLive(l)) continue
-    t.liveUnits += l.units
+    // Lessons taught: counted once per lesson (a group once); income: every student's row.
+    if (!live.has(lessonKey(l))) {
+      live.add(lessonKey(l))
+      t.liveUnits += l.units
+    }
     t.expected += l.price
     if (l.status === 'done') {
-      t.doneUnits += l.units
+      if (!done.has(lessonKey(l))) {
+        done.add(lessonKey(l))
+        t.doneUnits += l.units
+      }
       t.earned += l.price
     }
   }
@@ -52,13 +64,25 @@ export interface BreakdownRow {
   income: number
 }
 
-function breakdown(lessons: Lesson[], ym: string, keyOf: (l: Lesson) => string, nameOf: (key: string, l: Lesson) => string, colorOf?: (key: string) => string | undefined) {
+function breakdown(
+  lessons: Lesson[],
+  ym: string,
+  keyOf: (l: Lesson) => string,
+  nameOf: (key: string, l: Lesson) => string,
+  colorOf?: (key: string) => string | undefined,
+  groupOnce = false, // count a group lesson once (per type); per student every row counts
+) {
   const rows = new Map<string, BreakdownRow>()
+  const counted = new Set<string>()
   for (const l of lessons) {
     if (monthOf(l.date) !== ym || !isLive(l)) continue
     const k = keyOf(l)
     const r = rows.get(k) ?? { key: k, name: nameOf(k, l), color: colorOf?.(k), units: 0, income: 0 }
-    r.units += l.units
+    const once = `${k}|${lessonKey(l)}`
+    if (!groupOnce || !counted.has(once)) {
+      counted.add(once)
+      r.units += l.units
+    }
     r.income += l.price
     rows.set(k, r)
   }
@@ -72,6 +96,7 @@ export const byType = (lessons: Lesson[], ym: string, types: LessonType[]) =>
     (l) => l.lessonTypeId,
     (k) => types.find((t) => t.id === k)?.name ?? 'ללא סוג',
     (k) => EVENT_COLORS[types.find((t) => t.id === k)?.color ?? '']?.hex,
+    true,
   )
 
 export const byStudent = (lessons: Lesson[], ym: string) =>

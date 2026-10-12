@@ -28,19 +28,29 @@ export function seriesDates(sr: Series, from: string, to: string): string[] {
   return out
 }
 
-function occurrence(sr: Series, iso: string, ctx: OpsCtx): Lesson | null {
-  const st = ctx.students.find((s) => s.id === sr.studentId)
+/**
+ * The lesson rows of one series week: one row, or one per student of a group
+ * series (sharing a groupId and the same event id). The first student keeps the
+ * one-on-one id format, so existing series keep their ids.
+ */
+function occurrence(sr: Series, iso: string, ctx: OpsCtx): Lesson[] {
   const lt = ctx.lessonTypes.find((t) => t.id === sr.lessonTypeId)
-  if (!st || !lt) return null
+  const members = sr.studentIds.map((id) => ctx.students.find((s) => s.id === id)).filter((s): s is NonNullable<typeof s> => !!s)
+  if (!lt || !members.length) return []
+  const group = members.length > 1
+  return members.map((st, i) => one(sr, iso, lt.durationMin, st, group ? `gr_${sr.id.replace(/^sr_/, '')}_${iso.replace(/-/g, '')}` : '', i))
+}
+
+function one(sr: Series, iso: string, durationMin: number, st: { id: string; name: string }, groupId: string, index: number): Lesson {
   const start = toMin(sr.start)
   return {
-    id: occurrenceId(sr, iso),
+    id: index === 0 ? occurrenceId(sr, iso) : `${occurrenceId(sr, iso)}_${st.id}`,
     date: iso,
     start: sr.start,
-    end: fromMin(start + lt.durationMin * sr.units),
+    end: fromMin(start + durationMin * sr.units),
     studentId: st.id,
     studentName: st.name,
-    lessonTypeId: lt.id,
+    lessonTypeId: sr.lessonTypeId,
     price: sr.unitPrice * sr.units,
     status: 'planned',
     paid: false,
@@ -51,6 +61,7 @@ function occurrence(sr: Series, iso: string, ctx: OpsCtx): Lesson | null {
     seriesId: sr.id,
     seriesDate: iso,
     dismissed: [],
+    groupId,
   }
 }
 
@@ -61,8 +72,11 @@ function missingWeeks(sr: Series, lessons: Lesson[], today: string) {
   return seriesDates(sr, today, addDays(today, HORIZON_DAYS)).filter((d) => !have.has(d))
 }
 
-/** Creates a new weekly series starting with `first` and fills it up to the horizon. */
-export async function createSeries(ctx: OpsCtx, first: Lesson, unitPrice: number, endDate: string) {
+/**
+ * Creates a new weekly series starting with `first` and fills it up to the
+ * horizon. `others` = more students for a group series (same price each).
+ */
+export async function createSeries(ctx: OpsCtx, first: Lesson, unitPrice: number, endDate: string, others: string[] = []) {
   const sr: Series = {
     id: `sr_${crypto.randomUUID().replace(/-/g, '').slice(0, 10)}`,
     studentId: first.studentId,
@@ -74,11 +88,11 @@ export async function createSeries(ctx: OpsCtx, first: Lesson, unitPrice: number
     endDate,
     active: true,
     unitPrice,
+    studentIds: [first.studentId, ...others.filter((id) => id !== first.studentId)],
   }
   await ctx.db.upsert('Series', [sr])
   const drafts = missingWeeks(sr, [], first.date < todayIso() ? first.date : todayIso())
-    .map((iso) => occurrence(sr, iso, ctx))
-    .filter((l): l is Lesson => !!l)
+    .flatMap((iso) => occurrence(sr, iso, ctx))
     .map((l) => ({ ...l, notes: first.notes }))
   return createLessons(ctx, drafts, true)
 }
@@ -88,8 +102,7 @@ export async function topUpSeries(ctx: OpsCtx, series: Series[], lessons: Lesson
   const today = todayIso()
   const drafts = series
     .filter((sr) => sr.active && (!sr.endDate || sr.endDate >= today))
-    .flatMap((sr) => missingWeeks(sr, lessons, today).map((iso) => occurrence(sr, iso, ctx)))
-    .filter((l): l is Lesson => !!l)
+    .flatMap((sr) => missingWeeks(sr, lessons, today).flatMap((iso) => occurrence(sr, iso, ctx)))
   if (drafts.length) await createLessons(ctx, drafts, true)
   return drafts.length
 }

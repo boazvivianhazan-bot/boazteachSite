@@ -118,9 +118,9 @@ export function installMockGoogle() {
     const tue = addDays(sun, 2)
     sheets.demo = {
       LessonTypes: [
-        ['id', 'name', 'durationMin', 'price', 'isZoom', 'color', 'active'],
-        ['lt_front45', 'פרונטלי 45׳', 45, 130, false, '10', true],
-        ['lt_zoom120', 'זום 120', 45, 120, true, '5', true],
+        ['id', 'name', 'durationMin', 'price', 'isZoom', 'color', 'active', 'groupPrices'],
+        ['lt_front45', 'פרונטלי 45׳', 45, 130, false, '10', true, '{"2":100,"3":90,"4":80}'],
+        ['lt_zoom120', 'זום 120', 45, 120, true, '5', true, '{}'],
       ],
       Students: [
         ['id', 'name', 'phone', 'address', 'buildingCode', 'floorApt', 'defaultLessonTypeId', 'zoomLink', 'notes', 'active', 'allowedLessonTypeIds', 'parentName', 'parentPhone', 'familyId', 'paysMonthly'],
@@ -131,7 +131,10 @@ export function installMockGoogle() {
         ['st_yossi', 'יוסי לוי', '0503333333', 'ביאליק 5, רמת גן', '', '', 'lt_zoom120', 'https://zoom.us/j/1', '', true, 'lt_zoom120,lt_front45', 'רונית לוי', '0527777777', '', true],
       ],
       Lessons: [
-        ['id', 'date', 'start', 'end', 'studentId', 'studentName', 'lessonTypeId', 'price', 'status', 'paid', 'calendarEventId', 'notes', 'units', 'calendarId', 'seriesId', 'seriesDate', 'dismissed'],
+        ['id', 'date', 'start', 'end', 'studentId', 'studentName', 'lessonTypeId', 'price', 'status', 'paid', 'calendarEventId', 'notes', 'units', 'calendarId', 'seriesId', 'seriesDate', 'dismissed', 'groupId'],
+        // a group lesson next Monday: Dana + Noa, 100 each, ONE calendar event
+        ['ls_g1', addDays(sun, 1), '17:00', '17:45', 'st_dana', 'דנה כהן', 'lt_front45', 100, 'planned', false, 'app_grp1', '', 1, 'primary', '', '', '', 'gr_demo'],
+        ['ls_g2', addDays(sun, 1), '17:00', '17:45', 'st_noa', 'נועה כהן', 'lt_front45', 100, 'planned', false, 'app_grp1', '', 1, 'primary', '', '', '', 'gr_demo'],
         ['ls_1', sun, '15:00', '15:45', 'st_dana', 'דנה כהן', 'lt_front45', 130, 'planned', false, 'ev1', ''],
         // app-created events in the OLD title format (one future, one past) — for the one-time title fix
         ['ls_old1', addDays(sun, 1), '15:00', '15:45', 'st_yossi', 'יוסי לוי', 'lt_zoom120', 120, 'planned', false, 'app_old1', '', 1, 'primary', '', '', ''],
@@ -157,7 +160,11 @@ export function installMockGoogle() {
       start: { dateTime: zonedToUtc(iso, s).toISOString() }, end: { dateTime: zonedToUtc(iso, s + 45).toISOString() },
       extendedProperties: { private: { lessonsApp: '1' } },
     })
-    created['me@example.com'] = [oldEv('app_old1', addDays(sun, 1), 15 * 60, 'שיעור – יוסי לוי'), oldEv('app_old2', addDays(sun, -6), 12 * 60, 'שיעור – דנה כהן')]
+    created['me@example.com'] = [
+      oldEv('app_old1', addDays(sun, 1), 15 * 60, 'שיעור – יוסי לוי'),
+      oldEv('app_old2', addDays(sun, -6), 12 * 60, 'שיעור – דנה כהן'),
+      { ...oldEv('app_grp1', addDays(sun, 1), 17 * 60, '🏠 קבוצה – דנה, נועה (2)'), location: 'הרצל 1, תל אביב' },
+    ]
     // Past lessons for the monthly summary: this month and the two before.
     const today = utcToZoned(new Date()).iso
     const past = (days: number, start: string, end: string, st: string, name: string, lt: string, price: number, status: string, paid: boolean, units = 1) =>

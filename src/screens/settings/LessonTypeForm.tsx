@@ -6,7 +6,7 @@ import { useDb } from '../../data/db'
 import { EVENT_COLORS, newId, type LessonType } from '../../data/schema'
 import { errorText } from '../../lib/api'
 
-const blank = (): LessonType => ({ id: '', name: '', durationMin: 45, price: 0, isZoom: false, color: '7', active: true })
+const blank = (): LessonType => ({ id: '', name: '', durationMin: 45, price: 0, isZoom: false, color: '7', active: true, groupPrices: {} })
 
 export function LessonTypeForm({ initial, onClose }: { initial: LessonType | null; onClose: () => void }) {
   const { db } = useDb()
@@ -54,6 +54,31 @@ export function LessonTypeForm({ initial, onClose }: { initial: LessonType | nul
             <TextInput type="number" inputMode="decimal" min={0} value={lt.price}
               onChange={(e) => set('price', Number(e.target.value))} />
           </Field>
+        </div>
+        <div>
+          <span className="mb-1 block text-sm font-medium text-gray-700">מחיר לתלמיד בשיעור קבוצתי (₪)</span>
+          <div className="grid grid-cols-3 gap-2">
+            {(['2', '3', '4'] as const).map((k) => (
+              <label key={k} className="block">
+                <span className="mb-1 block text-xs text-gray-500">{k === '4' ? '4 ומעלה' : `${k} תלמידים`}</span>
+                <TextInput
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  placeholder={String(lt.price)}
+                  value={lt.groupPrices[k] ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    const next = { ...lt.groupPrices }
+                    if (v === '') delete next[k]
+                    else next[k] = Number(v)
+                    set('groupPrices', next)
+                  }}
+                />
+              </label>
+            ))}
+          </div>
+          <span className="mt-1 block text-xs text-gray-500">ריק = המחיר הרגיל ({lt.price} ₪) לכל תלמיד.</span>
         </div>
         <Toggle label="שיעור בזום" checked={lt.isZoom} onChange={(v) => set('isZoom', v)} />
         <div>

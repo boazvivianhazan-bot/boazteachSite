@@ -17,7 +17,8 @@ export interface ConflictReason {
 }
 
 export interface LessonConflict {
-  lesson: Lesson
+  lesson: Lesson // the first row
+  rows: Lesson[] // every student of the lesson (one row, or a whole group)
   reasons: ConflictReason[]
 }
 
@@ -61,9 +62,20 @@ export function findLessonConflicts(
     if (h?.kind === 'eve' && e > EVE_FROM_MIN) reasons.push({ id: `hol:${l.date}`, text: `${h.name} (מ-13:00)` })
 
     const open = reasons.filter((r) => !l.dismissed.includes(r.id))
-    if (open.length) out.push({ lesson: l, reasons: open })
+    if (open.length) out.push({ lesson: l, rows: [l], reasons: open })
   }
-  return out.sort((a, b) => (a.lesson.date + a.lesson.start).localeCompare(b.lesson.date + b.lesson.start))
+  // A group lesson is one conflict, not one per student.
+  const merged = new Map<string, LessonConflict>()
+  for (const c of out) {
+    const k = c.lesson.groupId || c.lesson.id
+    const m = merged.get(k)
+    if (!m) merged.set(k, c)
+    else {
+      m.rows.push(...c.rows)
+      for (const r of c.reasons) if (!m.reasons.some((x) => x.id === r.id)) m.reasons.push(r)
+    }
+  }
+  return [...merged.values()].sort((a, b) => (a.lesson.date + a.lesson.start).localeCompare(b.lesson.date + b.lesson.start))
 }
 
 /** Live conflict list for the next CHECK_DAYS days; recomputes when lessons or events change. */

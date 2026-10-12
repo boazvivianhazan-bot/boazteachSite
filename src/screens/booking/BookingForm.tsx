@@ -5,12 +5,12 @@ import { Button, ErrorBox } from '../../components/ui'
 import { findWarnings, type Warning } from '../../data/conflicts'
 import { useDb } from '../../data/db'
 import { cachedLoad, type EventsByDay } from '../../data/events'
-import { createLessons, updateLesson, type OpsCtx } from '../../data/lessonOps'
+import { cancelLessons, createLessons, groupRowsOf, updateLesson, updateLessons, type OpsCtx } from '../../data/lessonOps'
 import { createSeries, HORIZON_DAYS } from '../../data/series'
 import { balanceText, toCollect } from '../../data/billing'
 import { useBilling } from '../../data/payments'
 import { placeKey } from '../../data/plan'
-import { EVENT_COLORS, detailsMissing, isLive, newId, normalizeStudentTypes, type Lesson, type LessonType, type Student } from '../../data/schema'
+import { EVENT_COLORS, detailsMissing, groupPrice, isLive, newId, normalizeStudentTypes, type Lesson, type LessonType, type Student } from '../../data/schema'
 import { errorText } from '../../lib/api'
 import { DAY_NAMES, formatDate, ils } from '../../lib/format'
 import { fromMin, toMin } from '../../lib/time'
@@ -89,6 +89,11 @@ export function BookingForm({
   const [showOther, setShowOther] = useState(false)
   const [units, setUnits] = useState(editing?.units ?? 1)
   const [unitPrice, setUnitPrice] = useState<string>(editing ? String(editing.price / (editing.units || 1)) : '')
+  // Group lesson: the OTHER students in this lesson. Editing a group loads its other live members.
+  const editingGroup = editing ? groupRowsOf(editing, lessons) : []
+  const [others, setOthers] = useState<string[]>(() => editingGroup.filter((r) => r.id !== editing?.id).map((r) => r.studentId))
+  const [addingMember, setAddingMember] = useState(false)
+  const size = 1 + others.length
   const [date, setDate] = useState(editing?.date ?? (init.mode === 'new' ? init.iso : ''))
   const [start, setStart] = useState(editing?.start ?? (init.mode === 'new' && init.start !== null ? fromMin(init.start) : ''))
   const [repeat, setRepeat] = useState(false)
@@ -128,7 +133,13 @@ export function BookingForm({
 
   function pickType(t: LessonType) {
     setTypeId(t.id)
-    setUnitPrice(String(t.price)) // changing the type updates the price
+    setUnitPrice(String(groupPrice(t, size))) // changing the type updates the price (per student in a group)
+  }
+
+  /** Add / remove a group member; the per-student price follows the group size. */
+  function setMembers(next: string[]) {
+    setOthers(next)
+    if (type) setUnitPrice(String(groupPrice(type, 1 + next.length)))
   }
 
   // All active students: most recently booked first, then A–Z. Typing filters.
@@ -201,6 +212,7 @@ export function BookingForm({
       list: findWarnings({
         iso, start: startMin, end: endMin, place, events, lessons, students, lessonTypes, settings,
         ignoreLessonId: editing?.id,
+        ignoreGroupId: editing?.groupId || undefined,
         noBreakCheck: init.mode === 'new' && init.chain,
       }),
     }))
@@ -246,15 +258,32 @@ export function BookingForm({
         units,
         notes: notes.trim(),
       }
+      const memberIds = [st.id, ...others.filter((id) => id !== st!.id)]
+      const nameOf = (id: string) => ctx.students.find((x) => x.id === id)?.name ?? ''
       if (editing) {
-        const note = await updateLesson(ctx, { ...editing, ...base, date }, alsoCalendar)
-        if (note) setSaved({ lessons: [{ ...editing, ...base, date }], note })
+        // Same time / type / price for every member; each keeps their own row (and balance).
+        const gid = editing.groupId || (others.length ? newId('gr') : '')
+        const shared = { ...base, date, groupId: gid }
+        const rows = editingGroup.length ? editingGroup : [editing]
+        const kept = rows
+          .filter((r) => r.id === editing.id || memberIds.includes(r.studentId))
+          .map((r) => (r.id === editing.id ? { ...r, ...shared } : { ...r, ...shared, studentId: r.studentId, studentName: r.studentName }))
+        const added = memberIds
+          .filter((id) => id !== st!.id && !rows.some((r) => r.studentId === id))
+          .map((id): Lesson => ({ ...editing, ...shared, id: newId('ls'), studentId: id, studentName: nameOf(id), paid: false, dismissed: [] }))
+        const removed = rows.filter((r) => r.id !== editing.id && !memberIds.includes(r.studentId))
+        const note = await updateLessons(ctx, [...kept, ...added], alsoCalendar)
+        if (removed.length) await cancelLessons(ctx, removed)
+        if (note) setSaved({ lessons: [...kept, ...added], note })
         else onClose()
         return
       }
-      const first: Lesson = {
+      const groupId = others.length ? newId('gr') : ''
+      const rowFor = (id: string): Lesson => ({
         ...base,
         id: newId('ls'),
+        studentId: id,
+        studentName: nameOf(id),
         date,
         status: isPast ? 'done' : 'planned',
         paid: false,
@@ -263,11 +292,13 @@ export function BookingForm({
         seriesId: '',
         seriesDate: '',
         dismissed: [],
-      }
+        groupId,
+      })
+      const first = rowFor(st.id)
       const out =
         repeat && canRepeat
-          ? await createSeries(ctx, first, priceNum, seriesEnd)
-          : await createLessons(ctx, [first], willHaveEvent)
+          ? await createSeries(ctx, first, priceNum, seriesEnd, others)
+          : await createLessons(ctx, memberIds.map((id) => (id === st!.id ? first : rowFor(id))), willHaveEvent)
       setSaved({ lessons: out, note: null })
       if (createdStudent) setCompleteStudent(createdStudent)
     } catch (e) {
@@ -349,7 +380,7 @@ export function BookingForm({
               ? 'שומר…'
               : editing
                 ? 'שמירת שינויים'
-                : `שמירה${dates.length > 1 ? ` (${dates.length} שיעורים)` : ''}${total ? ` · ${ils(total * dates.length)}` : ''}`}
+                : `שמירה${dates.length > 1 ? ` (${dates.length} שיעורים)` : ''}${size > 1 ? ` · ${size} תלמידים` : ''}${total ? ` · ${ils(total * dates.length * size)}` : ''}`}
           </Button>
         </div>
       }
@@ -426,6 +457,54 @@ export function BookingForm({
           )}
         </div>
 
+        {/* group: more students in the same lesson */}
+        {(student || isNewStudent) && (
+          <div className="-mt-2 space-y-2">
+            {others.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {others.map((id) => (
+                  <span key={id} className="flex items-center gap-1 rounded-full bg-brand-50 ps-3 text-sm text-brand-800">
+                    {students.find((x) => x.id === id)?.name ?? id}
+                    <button type="button" aria-label="הסרה מהשיעור" onClick={() => setMembers(others.filter((x) => x !== id))} className="px-2 text-lg leading-none">
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {addingMember ? (
+              <select
+                autoFocus
+                value=""
+                onChange={(e) => {
+                  if (e.target.value) setMembers([...others, e.target.value])
+                  setAddingMember(false)
+                }}
+                onBlur={() => setAddingMember(false)}
+                className="block min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3 text-base"
+              >
+                <option value="">— בחירת תלמיד —</option>
+                {ordered
+                  .filter((x) => x.id !== studentId && !others.includes(x.id))
+                  .map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.name}
+                    </option>
+                  ))}
+              </select>
+            ) : (
+              <button type="button" onClick={() => setAddingMember(true)} className="text-sm font-medium text-brand-700">
+                + הוסף תלמיד לשיעור
+              </button>
+            )}
+            {others.length > 0 && (
+              <p className="rounded-xl bg-brand-50 px-3 py-2 text-xs text-brand-800">
+                👥 שיעור קבוצתי – {size} תלמידים · אירוע אחד ביומן, וכל תלמיד מחויב ביתרה שלו.
+              </p>
+            )}
+          </div>
+        )}
+
         {/* lesson type */}
         <div>
           <span className="mb-1 block text-sm font-medium text-gray-700">סוג שיעור</span>
@@ -464,7 +543,10 @@ export function BookingForm({
               ))}
             </div>
           </div>
-          <Field label="מחיר לשיעור (₪)" hint={units > 1 ? `סה״כ ${ils(total)}` : undefined}>
+          <Field
+            label={size > 1 ? `מחיר לתלמיד (קבוצה של ${size})` : 'מחיר לשיעור (₪)'}
+            hint={size > 1 ? `סה״כ לקבוצה: ${ils(total * size)}` : units > 1 ? `סה״כ ${ils(total)}` : undefined}
+          >
             <TextInput type="number" inputMode="decimal" min={0} value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} />
           </Field>
         </div>

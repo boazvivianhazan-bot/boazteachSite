@@ -8,6 +8,15 @@ export interface LessonType {
   isZoom: boolean
   color: string // Google Calendar event colorId "1".."11"
   active: boolean
+  /** Price PER STUDENT in a group, by group size: "2", "3", "4" (= 4 or more). Missing = the regular price. */
+  groupPrices: Partial<Record<'2' | '3' | '4', number>>
+}
+
+/** Per-student price of a lesson type for a group of `size` students (1 = a regular lesson). */
+export function groupPrice(t: Pick<LessonType, 'price' | 'groupPrices'>, size: number): number {
+  if (size <= 1) return t.price
+  const key = String(Math.min(size, 4)) as '2' | '3' | '4'
+  return t.groupPrices[key] ?? t.price
 }
 
 export interface Student {
@@ -61,6 +70,7 @@ export interface Lesson {
   seriesId: string // weekly series this lesson belongs to ('' = one-off)
   seriesDate: string // the series week this lesson fills (stays the same if this one week is moved)
   dismissed: string[] // conflict ids the user chose to keep ("השאר")
+  groupId: string // students in the same group lesson share it (and one calendar event); '' = one-on-one
 }
 
 /** A weekly lesson ("שיעור קבוע"). Each week becomes its own Lessons row + Calendar event. */
@@ -74,7 +84,8 @@ export interface Series {
   startDate: string // first week (yyyy-mm-dd)
   endDate: string // last possible week, or '' = open-ended
   active: boolean
-  unitPrice: number
+  unitPrice: number // per student (group price when it's a group)
+  studentIds: string[] // all students of a group series (first = studentId); [studentId] when one-on-one
 }
 
 export interface TimeRange {
@@ -114,10 +125,10 @@ export interface Settings {
 }
 
 export const COLUMNS = {
-  LessonTypes: ['id', 'name', 'durationMin', 'price', 'isZoom', 'color', 'active'],
+  LessonTypes: ['id', 'name', 'durationMin', 'price', 'isZoom', 'color', 'active', 'groupPrices'],
   Students: ['id', 'name', 'phone', 'address', 'buildingCode', 'floorApt', 'defaultLessonTypeId', 'zoomLink', 'notes', 'active', 'allowedLessonTypeIds', 'parentName', 'parentPhone', 'familyId', 'paysMonthly'],
-  Lessons: ['id', 'date', 'start', 'end', 'studentId', 'studentName', 'lessonTypeId', 'price', 'status', 'paid', 'calendarEventId', 'notes', 'units', 'calendarId', 'seriesId', 'seriesDate', 'dismissed'],
-  Series: ['seriesId', 'studentId', 'weekday', 'start', 'lessonTypeId', 'units', 'startDate', 'endDate', 'active', 'price'],
+  Lessons: ['id', 'date', 'start', 'end', 'studentId', 'studentName', 'lessonTypeId', 'price', 'status', 'paid', 'calendarEventId', 'notes', 'units', 'calendarId', 'seriesId', 'seriesDate', 'dismissed', 'groupId'],
+  Series: ['seriesId', 'studentId', 'weekday', 'start', 'lessonTypeId', 'units', 'startDate', 'endDate', 'active', 'price', 'studentIds'],
   Payments: ['id', 'date', 'payerId', 'amount', 'method', 'notes'],
   Settings: ['key', 'value'],
 } as const
@@ -161,6 +172,17 @@ const date = (v: Cell | undefined) => {
   return s.slice(0, 10)
 }
 
+function parseGroupPrices(v: Cell | undefined): LessonType['groupPrices'] {
+  try {
+    const o = JSON.parse(str(v) || '{}')
+    const out: LessonType['groupPrices'] = {}
+    for (const k of ['2', '3', '4'] as const) if (Number.isFinite(Number(o?.[k])) && o?.[k] !== '' && o?.[k] !== null) out[k] = Number(o[k])
+    return out
+  } catch {
+    return {}
+  }
+}
+
 export const fromRow = {
   LessonTypes: (r: Cell[]): LessonType => ({
     id: str(r[0]),
@@ -170,6 +192,7 @@ export const fromRow = {
     isZoom: bool(r[4]),
     color: str(r[5]) || '7',
     active: bool(r[6], true),
+    groupPrices: parseGroupPrices(r[7]),
   }),
   Students: (r: Cell[]): Student => normalizeStudentTypes({
     id: str(r[0]),
@@ -215,6 +238,7 @@ export const fromRow = {
     seriesId: str(r[14]),
     seriesDate: r[15] === undefined || r[15] === '' ? '' : date(r[15]),
     dismissed: str(r[16]).split('|').filter(Boolean),
+    groupId: str(r[17]),
   }),
   Series: (r: Cell[]): Series => ({
     id: str(r[0]),
@@ -227,11 +251,15 @@ export const fromRow = {
     endDate: str(r[7]) && str(r[7]) !== 'open' ? date(r[7]) : '',
     active: bool(r[8], true),
     unitPrice: num(r[9]),
+    studentIds: (() => {
+      const ids = str(r[10]).split(',').map((x) => x.trim()).filter(Boolean)
+      return ids.length ? ids : [str(r[1])]
+    })(),
   }),
 }
 
 export const toRow = {
-  LessonTypes: (x: LessonType): Cell[] => [x.id, x.name, x.durationMin, x.price, x.isZoom, x.color, x.active],
+  LessonTypes: (x: LessonType): Cell[] => [x.id, x.name, x.durationMin, x.price, x.isZoom, x.color, x.active, JSON.stringify(x.groupPrices)],
   Students: (x: Student): Cell[] => [
     x.id, x.name, x.phone, x.address, x.buildingCode, x.floorApt, x.defaultLessonTypeId, x.zoomLink, x.notes, x.active, x.allowedLessonTypeIds.join(','), x.parentName, x.parentPhone,
     x.familyId, x.paysMonthly,
@@ -239,10 +267,11 @@ export const toRow = {
   Payments: (x: Payment): Cell[] => [x.id, x.date, x.payerId, x.amount, x.method, x.notes],
   Lessons: (x: Lesson): Cell[] => [
     x.id, x.date, x.start, x.end, x.studentId, x.studentName, x.lessonTypeId, x.price, x.status, x.paid, x.calendarEventId, x.notes, x.units, x.calendarId,
-    x.seriesId, x.seriesDate, x.dismissed.join('|'),
+    x.seriesId, x.seriesDate, x.dismissed.join('|'), x.groupId,
   ],
   Series: (x: Series): Cell[] => [
     x.id, x.studentId, x.weekday, x.start, x.lessonTypeId, x.units, x.startDate, x.endDate || 'open', x.active, x.unitPrice,
+    x.studentIds.join(','),
   ],
 }
 
@@ -400,10 +429,10 @@ export function settingsToKv(s: Settings): [string, string][] {
 }
 
 export const SEED_LESSON_TYPES: LessonType[] = [
-  { id: 'lt_front45', name: 'פרונטלי 45׳', durationMin: 45, price: 130, isZoom: false, color: '10', active: true },
-  { id: 'lt_front150', name: 'פרונטלי 150', durationMin: 45, price: 150, isZoom: false, color: '9', active: true },
-  { id: 'lt_zoom120', name: 'זום 120', durationMin: 45, price: 120, isZoom: true, color: '5', active: true },
-  { id: 'lt_zoom100', name: 'זום 100', durationMin: 45, price: 100, isZoom: true, color: '6', active: true },
+  { id: 'lt_front45', name: 'פרונטלי 45׳', durationMin: 45, price: 130, isZoom: false, color: '10', active: true, groupPrices: {} },
+  { id: 'lt_front150', name: 'פרונטלי 150', durationMin: 45, price: 150, isZoom: false, color: '9', active: true, groupPrices: {} },
+  { id: 'lt_zoom120', name: 'זום 120', durationMin: 45, price: 120, isZoom: true, color: '5', active: true, groupPrices: {} },
+  { id: 'lt_zoom100', name: 'זום 100', durationMin: 45, price: 100, isZoom: true, color: '6', active: true, groupPrices: {} },
 ]
 
 /** Google Calendar event colors (colorId → name, hex). */

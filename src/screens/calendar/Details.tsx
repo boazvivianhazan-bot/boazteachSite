@@ -2,7 +2,8 @@ import { useState, type ReactNode } from 'react'
 import { Overlay } from '../../components/Overlay'
 import { Button, ErrorBox } from '../../components/ui'
 import { useDb } from '../../data/db'
-import { cancelLesson } from '../../data/lessonOps'
+import { cancelLesson, cancelLessons } from '../../data/lessonOps'
+import { GroupLesson } from './GroupLesson'
 import { CollectPanel } from '../payments/CollectPanel'
 import { errorText } from '../../lib/api'
 import type { CalEvent } from '../../data/events'
@@ -115,8 +116,13 @@ const STATUS_LABEL: Record<Lesson['status'], string> = { planned: 'מתוכנן'
 
 /** A lesson from the sheet: details + quick actions (edit, done, paid, cancel). */
 export function LessonDetails({ lesson, onClose, onEdit }: { lesson: Lesson; onClose: () => void; onEdit: () => void }) {
-  const { db, settings, students, lessonTypes, series } = useDb()
+  const { db, settings, students, lessonTypes, series, lessons } = useDb()
   const type = lessonTypes.find((t) => t.id === lesson.lessonTypeId)
+  // Group lesson: all its live rows (still shown as a group if this student was cancelled alone).
+  const groupLive = lesson.groupId ? lessons.filter((l) => l.groupId === lesson.groupId && isLive(l)) : []
+  // Opened as a group → stays a group screen while open (so "recalculate price?" survives when one student is left).
+  const [openedAsGroup] = useState(() => groupLive.length > 1)
+  const isGroup = !!lesson.groupId && groupLive.length > 0 && (openedAsGroup || groupLive.length > 1 || groupLive[0].id !== lesson.id)
   const sr = lesson.seriesId ? series.find((x) => x.id === lesson.seriesId) : undefined
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -136,11 +142,11 @@ export function LessonDetails({ lesson, onClose, onEdit }: { lesson: Lesson; onC
     }
   }
 
-  const cancelled = !isLive(lesson)
+  const cancelled = isGroup ? false : !isLive(lesson)
   return (
     <Overlay
       open
-      title={`שיעור – ${lesson.studentName}`}
+      title={isGroup ? `שיעור קבוצתי – ${groupLive.map((r) => r.studentName.split(' ')[0]).join(', ')}` : `שיעור – ${lesson.studentName}`}
       onClose={onClose}
       footer={
         !cancelled && (
@@ -149,12 +155,12 @@ export function LessonDetails({ lesson, onClose, onEdit }: { lesson: Lesson; onC
               עריכה
             </Button>
             {confirmCancel ? (
-              <Button variant="danger" className="flex-1" disabled={busy} onClick={() => run(() => cancelLesson(ctx, lesson), true)}>
+              <Button variant="danger" className="flex-1" disabled={busy} onClick={() => run(() => (isGroup ? cancelLessons(ctx, groupLive) : cancelLesson(ctx, lesson)), true)}>
                 {busy ? 'מבטל…' : 'כן, לבטל'}
               </Button>
             ) : (
               <Button variant="secondary" className="flex-1 text-red-700" disabled={busy} onClick={() => setConfirmCancel(true)}>
-                ביטול שיעור
+                {isGroup ? 'ביטול לכל הקבוצה' : 'ביטול שיעור'}
               </Button>
             )}
           </div>
@@ -174,7 +180,7 @@ export function LessonDetails({ lesson, onClose, onEdit }: { lesson: Lesson; onC
                 {lesson.units > 1 && ` ×${lesson.units}`}
               </span>
             </Row>
-            <Row label="מחיר">{ils(lesson.price)}</Row>
+            <Row label="מחיר">{isGroup ? `${ils(groupLive[0].price)} לתלמיד · ${ils(groupLive.reduce((s, r) => s + r.price, 0))} לקבוצה` : ils(lesson.price)}</Row>
             <Row label="יומן">{lesson.calendarEventId ? 'מופיע ביומן' : 'בגיליון בלבד'}</Row>
             {sr && <Row label="קבוע">🔁 {seriesLabel(sr)}{sr.active ? '' : ' (הסתיים)'}</Row>}
             {lesson.notes && <Row label="הערות">{lesson.notes}</Row>}
@@ -183,12 +189,13 @@ export function LessonDetails({ lesson, onClose, onEdit }: { lesson: Lesson; onC
         {cancelled ? (
           <p className="rounded-xl bg-gray-100 p-3 text-sm text-gray-600">{lesson.status === 'postponed' ? 'השיעור נדחה.' : 'השיעור בוטל.'}</p>
         ) : (
-          <CollectPanel lesson={lesson} />
+          isGroup ? <GroupLesson rows={groupLive} ctx={ctx} /> : <CollectPanel lesson={lesson} />
         )}
         {sr?.active && !cancelled && <EndSeriesButton sr={sr} fromIso={lesson.date} onDone={onClose} />}
         {confirmCancel && !cancelled && (
           <p className="rounded-xl bg-red-50 p-3 text-sm text-red-800">
-            הביטול ישאיר את השיעור בגיליון בסטטוס "בוטל"{lesson.calendarEventId ? ' וימחק את האירוע מהיומן' : ''}.
+            {isGroup ? `הביטול יסמן את כל ${groupLive.length} התלמידים כ"בוטל"` : 'הביטול ישאיר את השיעור בגיליון בסטטוס "בוטל"'}
+            {lesson.calendarEventId || groupLive.some((r) => r.calendarEventId) ? ' וימחק את האירוע מהיומן' : ''}.
           </p>
         )}
         {error && <ErrorBox message={error} />}

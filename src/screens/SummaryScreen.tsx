@@ -111,6 +111,7 @@ function LessonRow({ l, ctx, nowIso, onEdit, onCollect }: { l: Lesson; ctx: OpsC
             <span className="size-2 shrink-0 rounded-full" style={{ background: EVENT_COLORS[type?.color ?? '']?.hex ?? '#94a3b8' }} />
             <span dir="ltr">{l.start}</span> · {type?.name ?? '—'}
             {l.units > 1 && ` ×${l.units}`}
+            {l.groupId && ' · 👥 קבוצה'}
           </span>
         </span>
         <span className={`shrink-0 font-semibold tabular-nums ${live ? '' : 'text-gray-400 line-through'}`}>{ils(l.price)}</span>

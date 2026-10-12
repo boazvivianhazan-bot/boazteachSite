@@ -60,8 +60,10 @@ export function EndSeriesButton({ sr, fromIso, onDone }: { sr: Series; fromIso?:
 }
 
 export function SeriesList({ studentId }: { studentId: string }) {
-  const { series, lessonTypes } = useDb()
-  const mine = series.filter((x) => x.studentId === studentId && x.active)
+  const { series, lessonTypes, students } = useDb()
+  const mine = series.filter((x) => x.studentIds.includes(studentId) && x.active)
+  const groupNames = (sr: Series) =>
+    sr.studentIds.length > 1 ? ` · 👥 ${sr.studentIds.map((id) => students.find((s) => s.id === id)?.name.split(' ')[0] ?? '?').join(', ')}` : ''
   if (!mine.length) return null
   return (
     <section>
@@ -71,7 +73,7 @@ export function SeriesList({ studentId }: { studentId: string }) {
           const lt = lessonTypes.find((t) => t.id === sr.lessonTypeId)
           return (
             <Card key={sr.id} className="space-y-2">
-              <p className="font-medium">🔁 {seriesLabel(sr, lt?.name)}</p>
+              <p className="font-medium">🔁 {seriesLabel(sr, lt?.name)}{groupNames(sr)}</p>
               <p className="text-xs text-gray-500">
                 מ-{formatDate(sr.startDate)} {sr.endDate ? `עד ${formatDate(sr.endDate)}` : '· ללא תאריך סיום'} · {ils(sr.unitPrice * sr.units)} לשיעור
               </p>

@@ -21,6 +21,7 @@ interface Args {
   lessonTypes: LessonType[]
   settings: Settings
   ignoreLessonId?: string // the lesson being edited
+  ignoreGroupId?: string // …and the rest of its group
   noBreakCheck?: boolean // "+ שיעור צמוד": back-to-back on purpose
 }
 
@@ -30,6 +31,7 @@ export function findWarnings(a: Args): Warning[] {
   const day = a.events?.[a.iso]
   const lessonEventIds = new Set(a.lessons.filter(isLive).map((l) => l.calendarEventId).filter(Boolean))
   const ignoreEvent = a.lessons.find((l) => l.id === a.ignoreLessonId)?.calendarEventId
+  const inEditedGroup = (l: Lesson) => !!a.ignoreGroupId && l.groupId === a.ignoreGroupId
 
   // Things on that day: calendar events (lesson events are covered by the lessons) + sheet lessons.
   const items: { title: string; start: number; end: number; place: string | null; blocksBreak: boolean }[] = []
@@ -43,7 +45,7 @@ export function findWarnings(a: Args): Warning[] {
     if (!ev.transparent) out.push({ kind: 'overlap', text: `חופף ל: ${ev.title} (כל היום)` })
   }
   for (const l of a.lessons) {
-    if (l.date !== a.iso || !isLive(l) || l.id === a.ignoreLessonId || !l.start || !l.end) continue
+    if (l.date !== a.iso || !isLive(l) || l.id === a.ignoreLessonId || inEditedGroup(l) || !l.start || !l.end) continue
     const st = a.students.find((s) => s.id === l.studentId)
     const lt = a.lessonTypes.find((t) => t.id === l.lessonTypeId)
     items.push({
